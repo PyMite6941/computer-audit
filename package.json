@@ -2,12 +2,26 @@
   "name": "computer-audit",
   "version": "1.1.0",
   "description": "Cross-platform security & bloat audit toolkit: IAM visualization, threat hunting forensics, API security scanning, bloat/AI-bloat removal. AI-enhanceable. TUI + Web UI.",
-  "private": true,
+  "main": "cli/main.js",
+  "bin": {
+    "computer-audit": "cli/main.js"
+  },
   "scripts": {
     "setup": "echo 'Install Python deps first: ./install.sh (or install.ps1 on Windows)'",
     "dev": "echo 'Frontend scaffold — add a web/ frontend and point this at it when npm tooling is needed'",
-    "lint": "echo 'Placeholder for future eslint/prettier config'"
+    "lint": "echo 'Placeholder for future eslint/prettier config'",
+    "publish": "echo 'Use: npm publish (after npm login)'"
   },
+  "keywords": [
+    "security",
+    "audit",
+    "iam",
+    "forensics",
+    "api-scanner",
+    "bloat",
+    "threat-hunting",
+    "cross-platform"
+  ],
   "engines": {
     "node": ">=18"
   }
