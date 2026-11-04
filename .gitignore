@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.venv/
+.env
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+package-lock.json
+.npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data / outputs
+data/
+reports/
+*.log
+
+# IDE
+.vscode/
+.idea/
