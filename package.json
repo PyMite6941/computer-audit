@@ -2,10 +2,13 @@
   "name": "computer-audit",
   "version": "1.1.0",
   "description": "Cross-platform security & bloat audit toolkit: IAM visualization, threat hunting forensics, API security scanning, bloat/AI-bloat removal. AI-enhanceable. TUI + Web UI.",
-  "main": "cli/main.js",
-  "bin": {
-    "computer-audit": "cli/main.js"
+  "license": "MIT",
+  "author": "PyMite6941 <pymite6941@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PyMite6941/computer-audit.git"
   },
+  "homepage": "https://pymite6941.github.io/computer-audit/",
   "scripts": {
     "setup": "echo 'Install Python deps first: ./install.sh (or install.ps1 on Windows)'",
     "dev": "echo 'Frontend scaffold — add a web/ frontend and point this at it when npm tooling is needed'",
