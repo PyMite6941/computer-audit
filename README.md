@@ -13,8 +13,9 @@ host (everything runs in a Python venv; npm is optional for a future frontend).
 | 2 | Automated Threat Hunting & Memory Forensics | `core/forensics.py` | Extracts strings/indicators from memory dumps, parses logs, flags suspicious processes, emits a triage report |
 | 3 | API Security & Microservice Scanning | `core/api_scanner.py` | Dynamically discovers endpoints, probes for broken object-level authorization (BOLA) and missing auth |
 | 4 | Bloat & AI-Bloat Auditing | `core/bloat_auditor.py` | Detects Copilot, Recall, telemetry, unused services, pre-installed AppX apps; emits per-OS disable/remove shell commands |
-| 5 | Threat & Trojan Scanning | `core/threat_scanner.py` | Suspicious processes, persistence, indicators, network connections, **open ports** (parallel TCP scan) |
-| 6 | Safe Removal Engine | `core/removal_engine.py` | Dry-run by default, confirmation gate, NEVER_TOUCH list, SHA-256 audit logs |
+| 5 | Threat & Trojan Scanning | `core/threat_scanner.py` | Suspicious processes, persistence, indicators, network connections, **open ports**, **spyware/malware/adware**, browser extensions, autorun items |
+| 6 | Storage Bloat Scanning | `core/storage_scanner.py` | Parallel scan of temp, cache, old downloads, large unused files, duplicates across all storage |
+| 7 | Safe Removal Engine | `core/removal_engine.py` | Dry-run by default, confirmation gate, NEVER_TOUCH list, SHA-256 audit logs, file deletion |
 
 ## AI enhancement
 
@@ -54,17 +55,30 @@ when the LLM is unreachable.
 
 ```
 audit bloat        Detect bloat / AI bloat (Copilot, telemetry, unused services)
-audit threat       Threat / trojan triage scan (processes, persistence, network, open ports)
+audit threat       Threat / trojan triage scan (processes, persistence, network, open ports, spyware/malware/adware)
+audit storage      Storage bloat scan (temp, cache, old downloads, duplicates, large unused files)
 audit removal      Plan removal (dry-run) or apply with --apply
-audit full         Combined bloat + threat in parallel, then AI thinker
+audit full         Combined bloat + threat + storage in parallel, then AI thinker
 ```
 
 ## Removal safety
 
 - **Dry-run by default** — nothing changes until `--apply`.
 - **Confirmation gate** — full planned-action list shown before execution.
-- **NEVER_TOUCH** — OS-critical services/packages never selected.
+- **NEVER_TOUCH** — OS-critical services/packages and file system paths never selected.
 - **SHA-256 audit log** — every removal run writes a hashed log to `reports/`.
+- **File deletion** — storage bloat files are deleted directly (not via shell), with NEVER_TOUCH_PATHS protection.
+
+## Storage scanning
+
+Scans common bloat locations per OS:
+- **Windows**: %TEMP%, %TMP%, INetCache, WebCache, Downloads, CrashDumps, Prefetch
+- **macOS**: ~/Library/Caches, ~/Library/Logs, ~/Downloads, Safari caches, /var/log
+- **Linux**: ~/.cache, ~/.local/share/Trash, ~/Downloads, ~/.thumbnails, /var/log, /tmp
+
+Finds: temp files, cache files, old logs, old downloads, large unused files (>100MB, >90 days), duplicate files (by hash), empty folders.
+
+Runs in parallel (4 workers per root) for speed.
 
 ## Supported OS (non-mobile)
 

@@ -29,16 +29,28 @@ NEVER_TOUCH_PREFIXES = (
     "linux-svc-networkd", "linux-svc-journald", "linux-svc-login", "linux-svc-polkit",
 )
 
+# File system paths that must never be deleted
+NEVER_TOUCH_PATHS = (
+    # Windows
+    "windows\\system32", "windows\\syswow64", "windows\\boot",
+    "program files", "program files (x86)",
+    # Linux/macOS
+    "/bin", "/sbin", "/lib", "/lib64", "/usr", "/boot", "/etc",
+    "/proc", "/sys", "/dev", "/run",
+    "/system", "/System",
+)
+
 
 @dataclass
 class PlannedAction:
     id: str
     target: str
-    action: str          # disable | remove | stop
+    action: str          # disable | remove | stop | delete
     command: list[str]
     os: str
     risk: str
     reason: str
+    path: str | None = None      # file path for delete actions
 
 
 @dataclass
@@ -109,6 +121,32 @@ class RemovalEngine:
                 ))
         return planned
 
+    def plan_from_storage(self, report: dict[str, Any]) -> list[PlannedAction]:
+        """Plan deletion of storage bloat files. Skips NEVER_TOUCH_PATHS."""
+        planned: list[PlannedAction] = []
+        for it in report.get("items", []):
+            path = it.get("path", "")
+            if not path:
+                continue
+            low_path = path.lower()
+            # Never touch critical system paths
+            if any(nt in low_path for nt in NEVER_TOUCH_PATHS):
+                continue
+            # Never delete empty-dir entries (nothing to remove)
+            if it.get("category") == "empty-dir":
+                continue
+            planned.append(PlannedAction(
+                id=it.get("id", f"storage-{abs(hash(path)) % 100000}"),
+                target=it.get("name", path),
+                action="delete",
+                command=[],  # no shell command — handled directly in apply()
+                os=it.get("os", self.os),
+                risk=it.get("risk", "low"),
+                reason=f"{it.get('category', 'bloat')} file — {it.get('detail', '')}",
+                path=path,
+            ))
+        return planned
+
     def _kill_cmd(self, item: dict[str, Any]) -> list[str]:
         pid = item.get("evidence", {}).get("pid")
         if self.os == "windows" and pid:
@@ -153,21 +191,35 @@ class RemovalEngine:
                 skipped += 1
             else:
                 entry["executed"] = True
-                try:
-                    p = subprocess.run(a.command, capture_output=True, text=True, timeout=30)
-                    entry["returncode"] = p.returncode
-                    entry["stdout"] = p.stdout[:2000]
-                    entry["stderr"] = p.stderr[:2000]
-                    if p.returncode == 0:
+                # Handle file deletion directly (no shell command)
+                if a.action == "delete" and a.path:
+                    try:
+                        if os.path.isdir(a.path) and not os.path.islink(a.path):
+                            shutil.rmtree(a.path, ignore_errors=True)
+                        else:
+                            os.remove(a.path)
                         entry["status"] = "applied"
                         applied += 1
-                    else:
-                        entry["status"] = "failed"
+                    except Exception as exc:  # noqa: BLE001
+                        entry["status"] = "error"
+                        entry["stderr"] = str(exc)
                         failed += 1
-                except Exception as exc:  # noqa: BLE001
-                    entry["status"] = "error"
-                    entry["stderr"] = str(exc)
-                    failed += 1
+                else:
+                    try:
+                        p = subprocess.run(a.command, capture_output=True, text=True, timeout=30)
+                        entry["returncode"] = p.returncode
+                        entry["stdout"] = p.stdout[:2000]
+                        entry["stderr"] = p.stderr[:2000]
+                        if p.returncode == 0:
+                            entry["status"] = "applied"
+                            applied += 1
+                        else:
+                            entry["status"] = "failed"
+                            failed += 1
+                    except Exception as exc:  # noqa: BLE001
+                        entry["status"] = "error"
+                        entry["stderr"] = str(exc)
+                        failed += 1
             self.actions.append(entry)
         return self._write_log(applied, skipped, failed, len(planned))
 

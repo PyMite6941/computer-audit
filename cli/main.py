@@ -155,11 +155,16 @@ def build_parser() -> argparse.ArgumentParser:
     apb.add_argument("--ai", action="store_true", help="AI summary")
     apb.set_defaults(func=lambda args: run_audit(["bloat"] + _audit_args(args)))
 
-    apt = audit_sub.add_parser("threat", help="Threat / trojan triage scan")
+    apt = audit_sub.add_parser("threat", help="Threat / trojan triage scan (includes open ports)")
     apt.add_argument("--output", help="Write JSON report")
     apt.add_argument("--paths", nargs="*", help="Extra files to scan")
     apt.add_argument("--ai", action="store_true", help="AI summary")
     apt.set_defaults(func=lambda args: run_audit(["threat"] + _audit_args(args)))
+
+    aps = audit_sub.add_parser("storage", help="Storage bloat scan (temp, cache, old downloads, duplicates)")
+    aps.add_argument("--output", help="Write JSON report")
+    aps.add_argument("--ai", action="store_true", help="AI summary")
+    aps.set_defaults(func=lambda args: run_audit(["storage"] + _audit_args(args)))
 
     apr = audit_sub.add_parser("removal", help="Plan & apply bloat removal")
     apr.add_argument("--bloat-report", help="Existing bloat JSON report")

@@ -22,14 +22,15 @@ except Exception:  # pragma: no cover - fastapi not installed
     BaseModel = object  # type: ignore
 
 from core.ai_enhancer import build_enhancer
-from core.audit_cmd import _asdict, _run_bloat, _run_threat, _run_thinker
+from core.audit_cmd import _asdict, _run_bloat, _run_storage, _run_threat, _run_thinker
 from core.api_scanner import APIScanner
 from core.bloat_auditor import BloatAuditor
-from core.errors import AuditError, handle_error
+from core.errors import AuditError
 from core.forensics import Forensics
 from core.iam_auditor import IAMAuditor, load_sample_dump
 from core.port_scanner import scan_ports
 from core.removal_engine import RemovalEngine
+from core.storage_scanner import StorageBloatScanner
 from core.threat_scanner import ThreatScanner
 
 
@@ -90,7 +91,13 @@ class ThinkRequest(BaseModel):  # type: ignore[misc]
 
 class AuditRemovalRequest(BaseModel):  # type: ignore[misc]
     bloat_report: str | None = None
+    storage_report: str | None = None
     apply: bool = False
+
+
+class AuditStorageRequest(BaseModel):  # type: ignore[misc]
+    output: str | None = None
+    ai: bool = False
 
 
 def build_app() -> Any:
@@ -189,21 +196,38 @@ def build_app() -> Any:
             out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
 
+    @app.post("/audit/storage")
+    def web_audit_storage(req: AuditStorageRequest) -> dict[str, Any]:
+        try:
+            payload = _run_storage(req.ai)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": "STORAGE_AUDIT_FAILED", "message": str(exc), "keywords": ["storage", "audit", "failed"], "docs": "docs/troubleshooting.md"}
+        if req.output:
+            import json
+            from pathlib import Path
+            out = Path(req.output)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
+
     @app.post("/audit/full")
     def web_audit_full(req: AuditFullRequest) -> dict[str, Any]:
         try:
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 future_bloat = executor.submit(_run_bloat, req.ai)
                 future_threat = executor.submit(_run_threat, req.ai, None)
+                future_storage = executor.submit(_run_storage, req.ai)
                 bloat_payload = future_bloat.result()
                 threat_payload = future_threat.result()
+                storage_payload = future_storage.result()
 
-            think_payload = _run_thinker(bloat_payload, threat_payload, req.ai)
+            think_payload = _run_thinker(bloat_payload, threat_payload, storage_payload, req.ai)
 
             payload = {
                 "bloat": bloat_payload,
                 "threat": threat_payload,
+                "storage": storage_payload,
                 "think": think_payload,
             }
         except Exception as exc:  # noqa: BLE001
@@ -225,10 +249,17 @@ def build_app() -> Any:
         bloat_report = None
         if req.bloat_report and Path(req.bloat_report).exists():
             bloat_report = json.loads(Path(req.bloat_report).read_text(encoding="utf-8"))
+        elif req.storage_report and Path(req.storage_report).exists():
+            bloat_report = json.loads(Path(req.storage_report).read_text(encoding="utf-8"))
         else:
             bloat_report = _asdict(BloatAuditor().audit())
         engine = RemovalEngine(dry_run=not req.apply)
         planned = engine.plan_from_bloat(bloat_report)
+        # Also add storage deletion plans if storage report provided
+        if req.storage_report and Path(req.storage_report).exists():
+            storage_report = json.loads(Path(req.storage_report).read_text(encoding="utf-8"))
+            storage_planned = engine.plan_from_storage(storage_report)
+            planned.extend(storage_planned)
         if req.apply:
             result = engine.apply(planned, confirm=True)
             return {
@@ -259,37 +290,7 @@ def build_app() -> Any:
     def web_think(req: ThinkRequest) -> dict[str, Any]:
         bloat_payload = req.bloat_report or _asdict(BloatAuditor().audit())
         threat_payload = req.threat_report or _asdict(ThreatScanner().scan())
-        return _run_thinker(bloat_payload, threat_payload, req.ai)
-
-    @app.post("/audit/full")
-    def web_audit_full(req: AuditFullRequest) -> dict[str, Any]:
-        try:
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                future_bloat = executor.submit(_run_bloat, req.ai)
-                future_threat = executor.submit(_run_threat, req.ai, None)
-                bloat_payload = future_bloat.result()
-                threat_payload = future_threat.result()
-
-            think_payload = _run_thinker(bloat_payload, threat_payload, req.ai)
-
-            payload = {
-                "bloat": bloat_payload,
-                "threat": threat_payload,
-                "think": think_payload,
-            }
-        except Exception as exc:  # noqa: BLE001
-            return handle_error(AuditError("FULL_AUDIT_FAILED", str(exc), keywords=["full", "audit", "parallel", "failed"], docs="docs/troubleshooting.md"))
-
-        if req.output:
-            import json
-            from pathlib import Path
-            out = Path(req.output)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return payload
+        storage_payload = _asdict(StorageBloatScanner().scan())
+        return _run_thinker(bloat_payload, threat_payload, storage_payload, req.ai)
 
     return app
-
-
-app = build_app() if FastAPI is not None else None

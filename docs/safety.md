@@ -18,7 +18,10 @@ computer-audit removes bloat, AI bloat, and unnecessary services **safely**.
 | Telemetry | DiagTrack, diagnostics, activity history | low |
 | Unused services | Xbox services, RetailDemo, dmwappushservice | low |
 | Pre-installed apps | Zune, Xbox, Bing Weather, CandyCrush AppX | low |
-| Suspicious processes | Mimikatz, netcat, meterpreter (manual kill) | high |
+|| Suspicious processes | Mimikatz, netcat, meterpreter (manual kill) | high ||
+| Spyware / malware / adware | Known bad file names/paths in temp, appdata, downloads | medium–high ||
+| Browser extensions | Installed Chrome/Edge/Firefox extensions (review) | low ||
+| Autorun / startup items | Startup folder, LaunchAgents, LaunchDaemons, autostart | medium ||
 
 ## What is NEVER touched
 

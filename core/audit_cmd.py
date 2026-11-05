@@ -22,6 +22,7 @@ from core.ai_thinker import build_thinker
 from core.bloat_auditor import BloatAuditor
 from core.errors import AuditError, handle_error
 from core.removal_engine import RemovalEngine
+from core.storage_scanner import StorageBloatScanner
 from core.threat_scanner import ThreatScanner
 
 
@@ -66,7 +67,19 @@ def _run_threat(ai: bool, paths: list[str] | None) -> dict[str, Any]:
     return payload
 
 
-def _run_thinker(bloat_payload: dict[str, Any], threat_payload: dict[str, Any], ai: bool) -> dict[str, Any]:
+def _run_storage(ai: bool) -> dict[str, Any]:
+    scanner = StorageBloatScanner()
+    report = scanner.scan()
+    payload = _asdict(report)
+    if ai:
+        enhancer = build_enhancer(force_llm=True)
+        payload["ai_summary"] = enhancer.summarize(
+            [{"title": "storage-bloat", "detail": report.summary, "severity": "medium"}], "storage"
+        )
+    return payload
+
+
+def _run_thinker(bloat_payload: dict[str, Any], threat_payload: dict[str, Any], storage_payload: dict[str, Any], ai: bool) -> dict[str, Any]:
     """AI thinker runs after scanning, using results as context."""
     context = {
         "os": bloat_payload.get("os", "unknown"),
@@ -79,6 +92,12 @@ def _run_thinker(bloat_payload: dict[str, Any], threat_payload: dict[str, Any], 
         "indicators": threat_payload.get("indicators", 0),
         "network_connections": threat_payload.get("network_connections", 0),
         "open_ports": threat_payload.get("open_ports", 0),
+        "malware_items": threat_payload.get("malware_items", 0),
+        "spyware_items": threat_payload.get("spyware_items", 0),
+        "adware_items": threat_payload.get("adware_items", 0),
+        "storage_file_count": storage_payload.get("file_count", 0),
+        "storage_total_size": storage_payload.get("total_size", 0),
+        "storage_by_category": storage_payload.get("by_category", {}),
     }
     thinker = build_thinker(force_llm=ai)
     suggestions = thinker.think(context)
@@ -99,6 +118,16 @@ def cmd_audit_bloat(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit_storage(args: argparse.Namespace) -> int:
+    try:
+        payload = _run_storage(args.ai)
+    except Exception as exc:  # noqa: BLE001
+        return handle_error(AuditError("STORAGE_AUDIT_FAILED", str(exc), keywords=["storage", "audit", "failed"], docs="docs/troubleshooting.md"))
+    _write(args.output, payload)
+    print(payload.get("summary", ""))
+    return 0
+
+
 def cmd_audit_threat(args: argparse.Namespace) -> int:
     try:
         payload = _run_threat(args.ai, args.paths)
@@ -110,19 +139,22 @@ def cmd_audit_threat(args: argparse.Namespace) -> int:
 
 
 def cmd_audit_full(args: argparse.Namespace) -> int:
-    """Run bloat + threat scans in parallel, then AI thinker."""
+    """Run bloat + threat + storage scans in parallel, then AI thinker."""
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             future_bloat = executor.submit(_run_bloat, args.ai)
             future_threat = executor.submit(_run_threat, args.ai, None)
+            future_storage = executor.submit(_run_storage, args.ai)
             bloat_payload = future_bloat.result()
             threat_payload = future_threat.result()
+            storage_payload = future_storage.result()
 
-        think_payload = _run_thinker(bloat_payload, threat_payload, args.ai)
+        think_payload = _run_thinker(bloat_payload, threat_payload, storage_payload, args.ai)
 
         payload = {
             "bloat": bloat_payload,
             "threat": threat_payload,
+            "storage": storage_payload,
             "think": think_payload,
         }
     except Exception as exc:  # noqa: BLE001
@@ -131,6 +163,7 @@ def cmd_audit_full(args: argparse.Namespace) -> int:
     _write(args.output, payload)
     print(bloat_payload.get("summary", ""))
     print(threat_payload.get("summary", ""))
+    print(storage_payload.get("summary", ""))
     if think_payload.get("ai_summary"):
         print(f"AI thinker: {think_payload['ai_summary']}")
     print(f"Suggestions: {len(think_payload.get('suggestions', []))}")
@@ -183,6 +216,11 @@ def run_audit(argv: list[str] | None = None) -> int:
     pt.add_argument("--paths", nargs="*", help="Extra files to scan for indicators")
     pt.add_argument("--ai", action="store_true", help="AI summary")
     pt.set_defaults(func=cmd_audit_threat)
+
+    ps = sub.add_parser("storage", help="Storage bloat scan (temp, cache, old downloads, duplicates)")
+    ps.add_argument("--output", help="Write JSON report")
+    ps.add_argument("--ai", action="store_true", help="AI summary (needs AI_API_BASE/AI_API_KEY)")
+    ps.set_defaults(func=cmd_audit_storage)
 
     pr = sub.add_parser("removal", help="Plan & apply bloat removal")
     pr.add_argument("--bloat-report", help="Existing bloat JSON report")

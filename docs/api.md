@@ -8,10 +8,13 @@ Launch: `python -m cli.main web` → http://127.0.0.1:8000
 |--------|------|-------------|
 | GET | /health | Health check |
 | POST | /audit/bloat | Bloat / AI-bloat audit |
-| POST | /audit/threat | Threat / trojan triage |
-| POST | /audit/full | Combined bloat + threat |
-| POST | /audit/removal | Plan removal (dry-run) |
-| POST | /audit/removal/apply | Apply removal (confirmation required) |
+|| POST | /audit/threat | Threat / trojan triage (includes spyware/malware/adware) ||
+|| POST | /audit/storage | Storage bloat scan (temp, cache, old downloads, duplicates) ||
+|| POST | /audit/full | Combined bloat + threat + storage in parallel, then AI thinker ||
+|| POST | /audit/removal | Plan removal (dry-run) ||
+|| POST | /audit/removal/apply | Apply removal (confirmation required) ||
+|| POST | /scan/ports | Port scan (localhost) ||
+|| POST | /audit/think | AI thinker suggestions ||
 | GET | /graph/iam | IAM graph DOT (original module) |
 | POST | /ai/explain | AI explanation of a finding |
 

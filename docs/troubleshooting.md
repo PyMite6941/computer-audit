@@ -13,6 +13,7 @@ format: each has a **code**, **message**, **keywords**, and **docs** reference.
 | `FULL_AUDIT_FAILED` | Parallel audit crashed | full, audit, parallel, failed | Re-run without `--ai` to isolate AI backend issues. |
 | `UNEXPECTED_ERROR` | Unhandled exception | error, exception, crash | Check the error message and open a bug report with the code. |
 | `PORT_SCAN_FAILED` | Port scanner crashed | port, bind, firewall | Port scan is non-fatal — scan continues without port data. |
+| `STORAGE_AUDIT_FAILED` | Storage scan crashed | storage, audit, failed | Check file permissions on scan paths. Re-run `./run.sh audit storage`. |
 | `AI_BACKEND_UNREACHABLE` | LLM thinker/enhancer unreachable | ai, llm, unreachable | Falls back to offline rule-based thinker/enhancer automatically. |
 
 ## Port scanning
