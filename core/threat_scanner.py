@@ -5,6 +5,7 @@ Fast triage (std-only) that looks for:
 - Persistence mechanisms (Windows Run keys, Linux cron/systemd timers, macOS launchd)
 - Indicator strings (IPs, domains, base64 blobs, private keys) in memory-like files
 - Unexpected outbound network connections
+- Open ports on localhost (parallel TCP connect scan)
 
 Designed for quick triage, not a replacement for a full AV/EDR.
 """
@@ -20,6 +21,8 @@ import socket
 import subprocess
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from core.port_scanner import scan_ports  # noqa: E402
 
 
 SUSPICIOUS_PROC_KEYS = (
@@ -53,6 +56,7 @@ class ThreatReport:
     persistence_items: int
     indicators: int
     network_connections: int
+    open_ports: int
     summary: str
 
 
@@ -236,6 +240,23 @@ class ThreatScanner:
                         risk="low",
                     ))
 
+    # ------------------------------------------------------------- ports
+    def _ports(self) -> None:
+        try:
+            report = scan_ports(target="127.0.0.1")
+            for port in report.open_ports:
+                self.items.append(ThreatItem(
+                    id=f"threat-port-{port}",
+                    category="open-port",
+                    name=f"port {port}",
+                    detail=f"Open port {port} on localhost ({report.target})",
+                    os=self.os,
+                    evidence={"port": port, "target": report.target},
+                    risk="low",
+                ))
+        except Exception:  # noqa: BLE001 - port scan failure is non-fatal
+            pass
+
     # ------------------------------------------------------------- run
     def scan(self, extra_paths: list[str] | None = None) -> ThreatReport:
         self.items = []
@@ -243,7 +264,9 @@ class ThreatScanner:
         self._persistence()
         self._indicators(extra_paths or [])
         self._network()
+        self._ports()
 
+        open_count = sum(1 for i in self.items if i.category == "open-port")
         return ThreatReport(
             os=self.os,
             items=[asdict(i) for i in self.items],
@@ -251,11 +274,13 @@ class ThreatScanner:
             persistence_items=sum(1 for i in self.items if i.category == "persistence"),
             indicators=sum(1 for i in self.items if i.category == "indicator"),
             network_connections=sum(1 for i in self.items if i.category == "network"),
+            open_ports=open_count,
             summary=(
                 f"{len(self.items)} threat item(s) on {self.os}: "
                 f"{sum(1 for i in self.items if i.category=='suspicious-process')} suspicious process(es), "
                 f"{sum(1 for i in self.items if i.category=='persistence')} persistence item(s), "
                 f"{sum(1 for i in self.items if i.category=='indicator')} indicator(s), "
-                f"{sum(1 for i in self.items if i.category=='network')} network connection(s)."
+                f"{sum(1 for i in self.items if i.category=='network')} network connection(s), "
+                f"{open_count} open port(s)."
             ),
         )

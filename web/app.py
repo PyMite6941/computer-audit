@@ -22,11 +22,14 @@ except Exception:  # pragma: no cover - fastapi not installed
     BaseModel = object  # type: ignore
 
 from core.ai_enhancer import build_enhancer
-from core.audit_cmd import _asdict
+from core.audit_cmd import _asdict, _run_bloat, _run_threat, _run_thinker
 from core.api_scanner import APIScanner
 from core.bloat_auditor import BloatAuditor
+from core.errors import AuditError, handle_error
 from core.forensics import Forensics
 from core.iam_auditor import IAMAuditor, load_sample_dump
+from core.port_scanner import scan_ports
+from core.removal_engine import RemovalEngine
 from core.threat_scanner import ThreatScanner
 
 
@@ -69,6 +72,20 @@ class AuditThreatRequest(BaseModel):  # type: ignore[misc]
 
 class AuditFullRequest(BaseModel):  # type: ignore[misc]
     output: str | None = None
+    ai: bool = False
+
+
+class PortScanRequest(BaseModel):  # type: ignore[misc]
+    target: str = "127.0.0.1"
+    ports: list[int] | None = None
+    workers: int = 50
+    timeout: float = 1.0
+
+
+class ThinkRequest(BaseModel):  # type: ignore[misc]
+    bloat_report: dict[str, Any] | None = None
+    threat_report: dict[str, Any] | None = None
+    ai: bool = False
 
 
 class AuditRemovalRequest(BaseModel):  # type: ignore[misc]
@@ -174,10 +191,24 @@ def build_app() -> Any:
 
     @app.post("/audit/full")
     def web_audit_full(req: AuditFullRequest) -> dict[str, Any]:
-        payload = {
-            "bloat": _asdict(BloatAuditor().audit()),
-            "threat": _asdict(ThreatScanner().scan()),
-        }
+        try:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                future_bloat = executor.submit(_run_bloat, req.ai)
+                future_threat = executor.submit(_run_threat, req.ai, None)
+                bloat_payload = future_bloat.result()
+                threat_payload = future_threat.result()
+
+            think_payload = _run_thinker(bloat_payload, threat_payload, req.ai)
+
+            payload = {
+                "bloat": bloat_payload,
+                "threat": threat_payload,
+                "think": think_payload,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"error": "FULL_AUDIT_FAILED", "message": str(exc), "keywords": ["full", "audit", "parallel", "failed"], "docs": "docs/troubleshooting.md"}
+
         if req.output:
             import json
             from pathlib import Path
@@ -215,6 +246,48 @@ def build_app() -> Any:
             "dry_run": True,
             "message": "Dry run only. Set apply=true to execute.",
         }
+
+    @app.post("/scan/ports")
+    def web_scan_ports(req: PortScanRequest) -> dict[str, Any]:
+        try:
+            report = scan_ports(target=req.target, ports=req.ports, workers=req.workers, timeout=req.timeout)
+            return _asdict(report)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": "PORT_SCAN_FAILED", "message": str(exc), "keywords": ["port", "scan", "failed"], "docs": "docs/troubleshooting.md"}
+
+    @app.post("/audit/think")
+    def web_think(req: ThinkRequest) -> dict[str, Any]:
+        bloat_payload = req.bloat_report or _asdict(BloatAuditor().audit())
+        threat_payload = req.threat_report or _asdict(ThreatScanner().scan())
+        return _run_thinker(bloat_payload, threat_payload, req.ai)
+
+    @app.post("/audit/full")
+    def web_audit_full(req: AuditFullRequest) -> dict[str, Any]:
+        try:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                future_bloat = executor.submit(_run_bloat, req.ai)
+                future_threat = executor.submit(_run_threat, req.ai, None)
+                bloat_payload = future_bloat.result()
+                threat_payload = future_threat.result()
+
+            think_payload = _run_thinker(bloat_payload, threat_payload, req.ai)
+
+            payload = {
+                "bloat": bloat_payload,
+                "threat": threat_payload,
+                "think": think_payload,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return handle_error(AuditError("FULL_AUDIT_FAILED", str(exc), keywords=["full", "audit", "parallel", "failed"], docs="docs/troubleshooting.md"))
+
+        if req.output:
+            import json
+            from pathlib import Path
+            out = Path(req.output)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
 
     return app
 

@@ -167,8 +167,9 @@ def build_parser() -> argparse.ArgumentParser:
     apr.add_argument("--apply", action="store_true", help="Execute removal")
     apr.set_defaults(func=lambda args: run_audit(["removal"] + _audit_args(args)))
 
-    apf = audit_sub.add_parser("full", help="Full audit: bloat + threat")
+    apf = audit_sub.add_parser("full", help="Full audit: bloat + threat in parallel, then AI thinker")
     apf.add_argument("--output", help="Write JSON report")
+    apf.add_argument("--ai", action="store_true", help="AI summary + thinker (needs AI_API_BASE/AI_API_KEY)")
     apf.set_defaults(func=lambda args: run_audit(["full"] + _audit_args(args)))
 
     p_web = sub.add_parser("web", help="Launch web UI / API")
